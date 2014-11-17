@@ -1,7 +1,12 @@
 module SN where
 
+open import Stuff
 open import TypedLambda
 open import ParallelSubstitutionTyped
+open import Subst
+open import Reduction
+open import ReductionMany
+
 open import Data.Empty
 open import Data.Unit
 open import Data.Product
@@ -9,195 +14,7 @@ open import Data.Maybe
 open import Relation.Binary.PropositionalEquality renaming (subst to coerce; [_] to <_>)
 open ≡-Reasoning
 
--- standard stuff
-postulate
-  fun-ext : forall {i j}{X : Set i}{Y : X -> Set j}
-              {f g : (x : X) -> Y x} ->
-              ((x : X) -> f x ≡ g x) ->
-              f ≡ g
-  impl-fun-ext :
-      forall {i j}{X : Set i}{Y : X -> Set j} ->
-        {f g : {x : X} -> Y x} ->
-        ((x : X) -> f {x} ≡ g {x}) ->
-        (\{x} -> f {x}) ≡ g
-
-Not : forall {X : Set} -> (P : X -> Set) -> Set
-Not P = forall {x} -> P x -> ⊥
-
-data List {l}(X : Set l) : Set l where
-  <>    :                 List X
-  _,_   : X -> List X ->  List X
-
-_o_ : forall {i j k}
-        {A : Set i}{B : A -> Set j}{C : (a : A) -> B a -> Set k} ->
-        (f : {a : A}(b : B a) -> C a b) ->
-        (g : (a : A) -> B a) ->
-        (a : A) -> C a (g a)
-f o g = \ a -> f (g a)
-
-id : forall {k}{X : Set k} -> X -> X
-id x = x
-
-{-** substitution stuff **-}
-
--- strengthen a renaming
-str : forall {Gam Del sg} -> Ren (Gam :: sg) Del -> Ren Gam Del
-str pi x = pi (suc x)
-
-rename : forall {Gam Del} (pi : Ren Gam Del) {tau} -> Gam !- tau -> Del !- tau
-rename pi = subst pi
-
-sub : forall {Gam Del i} -> {vt : VarTrm i} -> RenSub Gam Del vt -> Sub Gam Del
-sub {vt = Var} theta x = var (theta x)
-sub {vt = Trm} theta x = theta x
-
-sub1 : forall {Gam sg} -> Gam !- sg -> Sub (Gam :: sg) Gam
-sub1 n zero    = n
-sub1 n (suc x) = var x
-
--- id-sub : forall {Gam i} -> {vt : VarTrm i} -> RenSub Gam Gam vt
--- id-sub {vt = Var} = id
--- id-sub {vt = Trm} = var
-
--- perhaps we can rationalise the following definitions
-
-lift-id' : forall {Gam sg tau} -> (x : tau <: Gam :: sg) -> lift id x ≡ x
-lift-id' zero    = refl
-lift-id' (suc x) = refl
-
-lift-id : (Gam : Cx Ty) (sg : Ty) ->
-    (\ {tau : Ty} (x : tau <: Gam :: sg) -> lift id x)
-  ≡
-    (\ {tau : Ty} (x : tau <: Gam :: sg) -> x)
-lift-id Gam sg = impl-fun-ext (\tau -> fun-ext (lift-id'{tau = tau}))
-
-sub-lift-id : forall {Gam sg tau} -> (m : Gam :: sg !- tau) -> subst (lift id) m ≡ subst id m
-sub-lift-id {Gam}{sg}{tau} m = cong (\theta -> subst (\{tau} -> theta{tau}) m) (lift-id Gam sg)
-
-rename-id :
-  forall {Gam tau} -> 
-    (m : Gam !- tau) ->
-       subst id m ≡ m
-rename-id (var x) = refl
-rename-id (lam m) = cong lam (coerce (\n -> subst (lift id) m ≡ n) (rename-id m) (sub-lift-id m))
-rename-id (app m n) rewrite rename-id m | rename-id n = refl
-
-lift-var' : forall {Gam sg tau} -> (x : tau <: Gam :: sg) -> lift var x ≡ var x
-lift-var' zero    = refl
-lift-var' (suc x) = refl
-
-lift-var : (Gam : Cx Ty) (sg : Ty) ->
-    (\ {tau : Ty} (x : tau <: Gam :: sg) -> lift var x)
-  ≡
-    (\ {tau : Ty} (x : tau <: Gam :: sg) -> var x)
-lift-var Gam sg = impl-fun-ext (\tau -> fun-ext (lift-var'{tau = tau}))
-
-sub-lift-var : forall {Gam sg tau} -> (m : Gam :: sg !- tau) -> subst (lift var) m ≡ subst var m
-sub-lift-var {Gam}{sg}{tau} m = cong (\theta -> subst (\{tau} -> theta{tau}) m) (lift-var Gam sg)
-
-sub-var : forall {Gam tau} -> (m : Gam !- tau) -> subst var m ≡ m
-sub-var (var x) = refl
-sub-var (lam m) = cong lam (coerce (\n -> subst (lift var) m ≡ n) (sub-var m) (sub-lift-var m))
-sub-var (app m n) rewrite sub-var m | sub-var n = refl
-
-str-suc :
-  forall {Gam Del sg tau} ->
-    (pi : Ren (Gam :: sg) Del)
-      (m : Gam !- tau) ->
-        subst (str pi) m ≡ subst pi (subst suc m)
-str-suc pi (var zero) = refl
-str-suc pi (var (suc x)) = refl
-str-suc pi (lam m) = begin
-    lam (subst (lift (str pi)) m)
-  ≡⟨ refl ⟩
-    lam (subst (lift (comp pi suc)) m)
-  ≡⟨ sym (cong (\theta' -> lam (subst (\{tau} -> theta'{tau}) m)) (comp_lift pi suc)) ⟩
-    lam (subst (comp (lift pi) (lift suc)) m)
-  ≡⟨ sym (cong lam (comp_subst (lift pi) (lift suc) m)) ⟩
-    lam (subst (lift pi) (subst (lift suc) m))
-  ∎
-str-suc pi (app m n) rewrite str-suc pi m | str-suc pi n = refl
-
-{-** more substitution lemmas **-}
-sub1-suc :
-  forall {Gam sg} -> (n : Gam !- sg) ->
-    (\{tau} -> comp (sub1 n) suc {tau}) ≡ var
-sub1-suc n = impl-fun-ext (\tau -> fun-ext (λ x → refl) )
-
-sub1-lift-var :
-  forall {Gam Del sg tau i} -> {vt : VarTrm i} -> (theta : RenSub Gam Del vt) -> (x : tau <: Gam :: sg) -> (n : Gam !- sg) ->
-    comp (sub1 (subst theta n)) (sub (lift theta)) x ≡ comp theta (sub1 n) x
-sub1-lift-var {vt = Var} theta zero n = refl
-sub1-lift-var {vt = Trm} theta zero n = refl
-sub1-lift-var {vt = Var} theta (suc x) n = begin
-    subst (sub1 (subst theta n)) (subst (\{tau} -> suc) (var (theta x)))
-  ≡⟨ comp_subst (sub1 (subst theta n)) suc (var (theta x)) ⟩
-    var (theta x)
-  ≡⟨ refl ⟩
-    subst theta (sub1 n (suc x))
-  ≡⟨ refl ⟩
-    comp theta (sub1 n) (suc x)
-  ∎  
-sub1-lift-var {vt = Trm} theta (suc x) n = begin
-    subst (sub1 (subst theta n)) (subst suc (theta x))
-  ≡⟨ comp_subst (sub1 (subst theta n)) suc (theta x) ⟩
-    subst (comp (sub1 (subst theta n)) (\{tau} -> suc)) (theta x)
-  ≡⟨ cong (\theta' -> subst (\{tau} -> theta'{tau}) (theta x)) (sub1-suc (subst theta n)) ⟩
-    subst var (theta x)
-  ≡⟨ sub-var (theta x) ⟩
-    theta x
-  ≡⟨ refl ⟩
-    subst theta (sub1 n (suc x))
-  ≡⟨ refl ⟩
-    comp theta (sub1 n) (suc x)
-  ∎
-
-sub1-lift :
-  forall {Gam Del sg i} -> {vt : VarTrm i} -> (theta : RenSub Gam Del vt) -> (n : Gam !- sg) ->
-    (\{tau} -> (comp (sub1 (subst theta n)) (sub (lift theta))){tau}) ≡ comp theta (sub1 n)
-sub1-lift theta n = impl-fun-ext (\tau -> fun-ext (\x -> sub1-lift-var theta x n))
-
-sub1-comp :
-  forall {Gam Del sg tau i} -> {vt : VarTrm i} -> (theta : RenSub Gam Del vt) -> (m : Gam :: sg !- tau) -> (n : Gam !- sg) ->
-    subst (comp (sub1 (subst theta n)) (sub (lift theta))) m ≡ subst (comp theta (sub1 n)) m
-sub1-comp theta m n = cong (\theta' -> subst (\{tau} -> theta'{tau}) m) (sub1-lift theta n)
-
-{-** The reduction relation **-}
-infixr 2 _==>_
-data _==>_ : {Gam : Cx Ty} {tau : Ty} (m : Gam !- tau) -> (m' : Gam !- tau) -> Set where
-
-  beta :      forall {Gam sg tau} -> {m : Gam :: sg !- tau} -> {n : Gam !- sg}
-          
-          --  -----------------------------------------------
-          ->  app (lam m) n ==> subst (sub1 n) m
-
-  lam :       forall {Gam sg tau} {m n : Gam :: sg !- tau}
-          ->  m ==> n
-          --  ---------------
-          ->  lam m ==> lam n
-
-  app-fun :  forall {Gam sg tau} {m m' : Gam !- sg ->> tau} {n : Gam !- sg}
-          ->  m ==> m'
-          --  --------------------
-          ->  app m n ==> app m' n
-
-  app-arg :  forall {Gam sg tau} {m : Gam !- sg ->> tau} {n n' : Gam !- sg}
-          ->  n ==> n'
-          --  --------------------
-          ->  app m n ==> app m n'
-
-{-** Transitive reflexive closure of the reduction relation **-}
-infixr 2 _==>*_
-data _==>*_ : {Gam : Cx Ty} {tau : Ty} (m : Gam !- tau) -> (m' : Gam !- tau) -> Set where
-
-  none : forall {Gam tau} -> {m : Gam !- tau} -> m ==>* m
-
-  one : forall {Gam tau} -> {m m' : Gam !- tau} -> m ==> m' -> m ==>* m'
-
-  many : forall {Gam tau} -> {m m' m'' : Gam !- tau} -> m ==>* m' -> m' ==>* m'' -> m ==>* m'' 
-
-
--- inductive characerisation of weak normalisation
+-- inductive characterisation of weak normalisation
 data WN : {Gam : Cx Ty} {tau : Ty} (m : Gam !- tau) -> Set where
   stop : forall {Gam tau m}   -> Not (\n -> m ==> n) -> WN{Gam}{tau} m
   step : forall {Gam tau m n} -> m ==> n -> WN{Gam}{tau} n -> WN m
@@ -209,6 +26,10 @@ mutual
 
   SN' : {Gam : Cx Ty} {tau : Ty} (m : Gam !- tau) -> Set
   SN' m = forall {n} -> m ==> n -> SN n
+
+sn-closed : {Gam : Cx Ty} -> {tau : Ty} ->
+  (m : Gam !- tau) -> SN m -> {m' : Gam !- tau} -> m ==> m' -> SN m'
+sn-closed m (step g) r = g r
 
 unstep : forall {Gam tau} -> {m : Gam !- tau} -> SN m -> SN' m
 unstep (step g) = g
@@ -327,6 +148,11 @@ mutual
   SNs' : {Gam : Cx Ty} {tau rho : Ty} (s : Gam !-s tau -o rho) -> Set
   SNs' s = forall {s'} -> s ==>s s' -> SNs s'
 
+sns-closed : {Gam : Cx Ty} -> {tau rho : Ty} -> (s : Gam !-s tau -o rho) ->
+                SNs s -> {s' : Gam !-s tau -o rho} -> s ==>s s' -> SNs s'
+sns-closed s (step g) r = g r
+
+
 -- unsteps : forall {Gam tau rho} -> {s : Gam !-s tau -o rho} -> SNs s -> SNs' s
 -- unsteps (step g) = g
 
@@ -407,13 +233,6 @@ red-term : forall {Gam tau rho} -> (s : Gam !-s tau -o rho) -> (m m' : Gam !- ta
 red-term [-]       m m' r = r
 red-term (app s n) m m' r = red-term s (app m n) (app m' n) (app-fun r)
 
--- the plugging operation preserves the transitive closure of term reduction
-red-term* : forall {Gam tau rho} -> (s : Gam !-s tau -o rho) -> {m m' : Gam !- tau} ->
-             m ==>* m' -> s [ m ] ==>* s [ m' ]
-red-term* s {m} {.m} none = none
-red-term* s {m} {n} (one r) = one (red-term s m n r)
-red-term* s {m} {n} (many rs rs') = many (red-term* s rs) (red-term* s rs')
-
 -- the plugging operation preserves frame stack reduction
 red-stack : forall {Gam tau rho} -> (s s' : Gam !-s tau -o rho) -> (m : Gam !- tau) ->
             s ==>s s' -> s [ m ] ==> s' [ m ]
@@ -473,133 +292,36 @@ mutual
   -- it is crucial to allow the term to be renamed in order to allow
   -- it to be placed in any frame stack of the correct type
 
-
 -- reducibility implies strong normalisation
 red-sn : (tau : Ty) -> {Gam : Cx Ty}-> (m : Gam !- tau) -> Red tau m -> SN m
 red-sn iota         m red = coerce SN (rename-id m) (red {pi = id}{s = [-]} tt)
 red-sn (sg ->> tau) m red = coerce SN (rename-id m) (red {pi = id}{s = [-]} tt)
 
+{-** strong normalisation is closed under beta expansion **-}
 
--- substitution preserves ==>
-sub-red : forall {Gam Del tau i} -> {vt : VarTrm i} -> (theta : RenSub Gam Del vt) -> (m m' : Gam !- tau) -> (r : m ==> m') ->
-            subst theta m ==> subst theta m'
-sub-red theta (var x) m' ()
-sub-red theta (lam m) (lam m') (lam r) = lam (sub-red (lift theta) m m' r)
-sub-red {Gam}{Del}{tau}{vt = Var}theta (app (lam{sg = sg} m) n) .(subst (sub1 n) m) beta = r where
-  p : subst (sub1 (subst theta n)) (subst (lift theta) m) ≡ subst theta (subst (sub1 n) m)
-  p = begin 
-          subst (sub1 (subst theta n)) (subst (lift theta) m)
-        ≡⟨ comp_subst (sub1 (subst theta n)) (lift theta) m ⟩
-          subst (comp (sub1 (subst theta n)) (lift theta)) m
-        ≡⟨ sub1-comp theta m n ⟩
-          subst (comp theta (sub1 n)) m
-        ≡⟨ sym (comp_subst theta (sub1 n) m) ⟩
-          subst theta (subst (sub1 n) m)
-        ∎
-
-  r : subst theta (app (lam m) n) ==> subst theta (subst (sub1 n) m)
-  r = coerce (\m' -> (app (lam (subst (lift theta) m)) (subst theta n)) ==> m') p beta
-sub-red {Gam}{Del}{tau}{vt = Trm}theta (app (lam{sg = sg} m) n) .(subst (sub1 n) m) beta = r where
-  p : subst (sub1 (subst theta n)) (subst (lift theta) m) ≡ subst theta (subst (sub1 n) m)
-  p = begin 
-          subst (sub1 (subst theta n)) (subst (lift theta) m)
-        ≡⟨ comp_subst (sub1 (subst theta n)) (lift theta) m ⟩
-          subst (comp (sub1 (subst theta n)) (lift theta)) m
-        ≡⟨ sub1-comp theta m n ⟩
-          subst (comp theta (sub1 n)) m
-        ≡⟨ sym (comp_subst theta (sub1 n) m) ⟩
-          subst theta (subst (sub1 n) m)
-        ∎
-
-  r : subst theta (app (lam m) n) ==> subst theta (subst (sub1 n) m)
-  r = coerce (\m' -> (app (lam (subst (lift theta) m)) (subst theta n)) ==> m') p beta
-sub-red theta (app m n) (app m' .n) (app-fun r) = app-fun (sub-red theta m m' r)
-sub-red theta (app m n) (app .m n') (app-arg r) = app-arg (sub-red theta n n' r)
-
--- substitution preserves ==>*
-sub-red* : forall {Gam Del tau i} -> {vt : VarTrm i} -> (theta : RenSub Gam Del vt) -> (m m' : Gam !- tau) -> (r : m ==>* m') ->
-            subst theta m ==>* subst theta m'
-sub-red* theta m .m none = none
-sub-red* theta m m' (one r) = one (sub-red theta m m' r)
-sub-red* theta m m' (many rs rs') = many (sub-red* theta m _ rs) (sub-red* theta _ m' rs')
-
-
-app-fun* :
-  forall {Gam sg tau} ->
-    {m m' : Gam !- sg ->> tau} ->
-    {n : Gam !- sg} ->
-      m ==>* m' ->
-       app m n ==>* app m' n
-app-fun* none          = none
-app-fun* (one r)       = one (app-fun r)
-app-fun* (many rs rs') = many (app-fun* rs) (app-fun* rs')
-
-app-arg* :
-  forall {Gam sg tau} ->
-    {m : Gam !- sg ->> tau} ->
-    {n n' : Gam !- sg} ->
-      n ==>* n' ->
-       app m n ==>* app m n'
-app-arg* none          = none
-app-arg* (one r)       = one (app-arg r)
-app-arg* (many rs rs') = many (app-arg* rs) (app-arg* rs')
-
-lam* : 
-  forall {Gam sg tau} ->
-    {m m' : Gam :: sg !- tau} ->
-      m ==>* m' ->
-       lam m ==>* lam m'
-lam* none          = none
-lam* (one r)       = one (lam r)
-lam* (many rs rs') = many (lam* rs) (lam* rs')
-
-_++_ : Cx Ty -> Cx Ty -> Cx Ty
-Gam ++ Em = Gam
-Gam ++ (Del :: x) = (Gam ++ Del) :: x
-
--- generalised weakening
-lift* : forall {Gam Del i} -> {vt : VarTrm i} -> (Phi : Cx Ty) -> RenSub Gam Del vt -> RenSub (Gam ++ Phi) (Del ++ Phi) vt
-lift* Em         theta = theta
-lift* (Phi :: _) theta = lift (lift* Phi theta)
-
--- this seems to be the one place we require genuine weakening as
--- opposed to more general renaming
-
--- substitutions simulate reduction of the substituted term
-sub-arg-red :
-  forall {Gam sg tau} -> (Del : Cx Ty) ->
-    (m : (Gam :: sg) ++ Del !- tau) ->
-      (n n' : Gam !- sg) ->
-        (r : n ==> n') ->
-          subst (lift* Del (sub1 n)) m ==>* subst (lift* Del (sub1 n')) m
-sub-arg-red Em (var zero) n n' r = one r
-sub-arg-red Em (var (suc x)) n n' r = none
-sub-arg-red (Del :: tau) (var zero) n n' r = none
-sub-arg-red (Del :: tau) (var (suc x)) n n' r =
-  sub-red* suc (lift* Del (sub1 n) x) (lift* Del (sub1 n') x) (sub-arg-red Del (var x) n n' r)
-sub-arg-red {Gam}{sg}{sg' ->> tau} Del (lam m) n n' r = lam* (sub-arg-red (Del :: sg') m n n' r)
-sub-arg-red Del (app m m') n n' r =
-  many (app-fun* (sub-arg-red Del m n n' r)) (app-arg* (sub-arg-red Del m' n n' r))
-
--- any descendant of a strongly normalising term in strongly
+-- any descendant of a strongly normalising term is strongly
 -- normalising
-sn* :
+sn-closed* :
   forall {Gam tau} ->
     (m n : Gam !- tau) -> m ==>* n -> SN m -> SN n
-sn* m .m none (step g) = step g
-sn* m n (one r) (step g) = g r
-sn* m n (many{m' = m'} rs rs') (step g) = sn* m' n rs' (sn* m m' rs (step g))
+sn-closed* m .m none m-sn = m-sn
+sn-closed* m n (one r) m-sn = sn-closed m m-sn r
+sn-closed* m n (many{m' = m'} rs rs') m-sn = sn-closed* m' n rs' (sn-closed* m m' rs m-sn)
+
+-- the plugging operation preserves the transitive closure of term reduction
+red-term* : forall {Gam tau rho} -> (s : Gam !-s tau -o rho) -> {m m' : Gam !- tau} ->
+             m ==>* m' -> s [ m ] ==>* s [ m' ]
+red-term* s {m} {.m} none = none
+red-term* s {m} {n} (one r) = one (red-term s m n r)
+red-term* s {m} {n} (many rs rs') = many (red-term* s rs) (red-term* s rs')
 
 sub1-sn :
   forall {Gam sg tau rho} -> (s : Gam !-s tau -o rho) -> (m : Gam :: sg !- tau) -> (n n' : Gam !- sg) ->
     n ==> n' -> SNp (Plug s (subst (sub1 n) m)) -> SNp (Plug s (subst (sub1 n') m))
 sub1-sn s m n n' r snp = step (sn-snp s (subst (sub1 n') m) sn) where
   sn : SN (s [ subst (sub1 n') m ])
-  sn = sn* (s [ subst (sub1 n) m ]) (s [ subst (sub1 n') m ])
+  sn = sn-closed* (s [ subst (sub1 n) m ]) (s [ subst (sub1 n') m ])
             (red-term* s (sub-arg-red Em m n n' r)) (step (snp-sn s (subst (sub1 n) m) snp))
-
-
-{-** strong normalisagion is closed under beta expansion **-}
 
 -- plugs
 snp-closure : forall {Gam sg tau rho} -> (m : Gam :: sg !- tau) -> (n : Gam !- sg) -> (s : Gam !-s tau -o rho) ->
@@ -622,28 +344,28 @@ sn-closure m n s smn-nf n-nf =
 
 -- reducibility is closed under reduction
 
--- terms
-red-closed : {Gam : Cx Ty} -> {tau : Ty} -> (m : Gam !- tau) -> Red tau m -> {m' : Gam !- tau} -> m ==> m' -> Red tau m'
-red-closed m red {m' = m'} r {pi = pi} {s = s} redT =
-  unstep (red {s = s} redT) {s [ rename pi m' ] } (red-term s (rename pi m) (rename pi m') (sub-red pi m m' r))
+-- -- terms
+-- red-closed : {Gam : Cx Ty} -> {tau : Ty} -> (m : Gam !- tau) -> Red tau m -> {m' : Gam !- tau} -> m ==> m' -> Red tau m'
+-- red-closed m red {m' = m'} r {pi = pi} {s = s} redT =
+--   unstep (red {s = s} redT) {s [ rename pi m' ] } (red-term s (rename pi m) (rename pi m') (sub-red pi m m' r))
 
--- frame stacks
-redT-closed : {Gam : Cx Ty} -> {tau rho : Ty} -> (s : Gam !-s tau -o rho) ->
-                RedT tau s -> {s' : Gam !-s tau -o rho} -> s ==>s s' -> RedT tau s'
-redT-closed {tau = iota} [-] tt ()
-redT-closed {tau = sg ->> tau} [-] tt ()
-redT-closed {tau = sg ->> tau} (app s n) (redT , red) (app-stack r) = redT-closed s redT r , red
-redT-closed {tau = sg ->> tau} (app s n) (redT , red) (app-term r) = redT , red-closed n red r
+-- -- frame stacks
+-- redT-closed : {Gam : Cx Ty} -> {tau rho : Ty} -> (s : Gam !-s tau -o rho) ->
+--                 RedT tau s -> {s' : Gam !-s tau -o rho} -> s ==>s s' -> RedT tau s'
+-- redT-closed {tau = iota} [-] tt ()
+-- redT-closed {tau = sg ->> tau} [-] tt ()
+-- redT-closed {tau = sg ->> tau} (app s n) (redT , red) (app-stack r) = redT-closed s redT r , red
+-- redT-closed {tau = sg ->> tau} (app s n) (redT , red) (app-term r) = redT , red-closed n red r
 
--- reducable frame stacks are strongly normalising
+-- reducible frame stacks are strongly normalising
 redT-sn : {tau : Ty} -> {Gam : Cx Ty} -> {rho : Ty} -> (s : Gam !-s tau -o rho)
                            -> RedT tau s -> SNs s
 redT-sn {iota} [-] tt = step (\())
 redT-sn {sg ->> tau} [-] tt = step (\())
 redT-sn {sg ->> tau} (app s n) (redT , red) = step g where
   g : SNs' (app s n)
-  g {app .s n'}(app-term r)  = sns-app (redT-sn {tau} s redT) (red-sn sg n' (red-closed n red r))
-  g {app s' .n}(app-stack r) = sns-app (redT-sn {tau} s' (redT-closed s redT r)) (red-sn sg n red)
+  g {app .s n'}(app-term r)  = sns-app (redT-sn {tau} s redT) (sn-closed n (red-sn sg n red) r)
+  g {app s' .n}(app-stack r) = sns-app (sns-closed s (redT-sn s redT) r) (red-sn sg n red)
 
 -- variables are reducible
 var-red : (tau : Ty) -> {Gam : Cx Ty} -> (x : tau <: Gam) -> Red tau (var x)
@@ -660,7 +382,7 @@ rename-red :
 rename-red pi m red {pi = pi'} {s = s} redT =
   coerce (\m -> SN (s [ m ])) (sym (comp_subst pi' pi m)) (red {pi = comp pi' pi} {s = s} redT)
 
-{-** reducibility is closed under beta expansion **-}
+{-** reducibility is closed under lambda abstraction **-}
 red-closure : forall {Gam sg tau} -> (m : Gam :: sg !- tau) ->
   Red tau m ->
     (forall {Del} -> {pi : Ren Gam Del} -> {n : Del !- sg} ->
