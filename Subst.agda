@@ -48,7 +48,7 @@ sub-lift-id : forall {Gam sg tau} -> (m : Gam :: sg !- tau) -> subst (lift id) m
 sub-lift-id {Gam}{sg}{tau} m = cong (\theta -> subst (\{tau} -> theta{tau}) m) (lift-id Gam sg)
 
 rename-id :
-  forall {Gam tau} -> 
+  forall {Gam tau} ->
     (m : Gam !- tau) ->
        subst id m ≡ m
 rename-id (var x) = refl
@@ -110,7 +110,7 @@ sub1-lift-var {vt = Var} theta (suc x) n = begin
     subst theta (sub1 n (suc x))
   ≡⟨ refl ⟩
     comp theta (sub1 n) (suc x)
-  ∎  
+  ∎
 sub1-lift-var {vt = Trm} theta (suc x) n = begin
     subst (sub1 (subst theta n)) (subst suc (theta x))
   ≡⟨ comp_subst (sub1 (subst theta n)) suc (theta x) ⟩

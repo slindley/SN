@@ -62,7 +62,7 @@ reduce (lam m) | just (m' , f) = just (lam m' , lam f)
 reduce (lam m) | nothing = nothing
 reduce (app m n) with reduce m
 reduce (app m n) | just (m' , f) = just (app m' n , app-fun f)
-reduce (app m n) | nothing with reduce n 
+reduce (app m n) | nothing with reduce n
 reduce (app m n) | nothing | just (n' , f) = just (app m n' , app-arg f)
 reduce (app m n) | nothing | nothing = nothing
 
@@ -106,7 +106,7 @@ app s m [ l ] = s [ app l m ]
 record Plugged (Gam : Cx Ty) (rho tau : Ty) : Set where
   constructor Plug
   field
-    s : Gam !-s tau -o rho 
+    s : Gam !-s tau -o rho
     m : Gam !- tau
 
 -- it turns out that we don't need to decompose terms
@@ -116,7 +116,7 @@ record Plugged (Gam : Cx Ty) (rho tau : Ty) : Set where
 --   field
 --     l : Gam !- rho
 --     tau : Ty
---     s : Gam !-s tau -o rho 
+--     s : Gam !-s tau -o rho
 --     m : Gam !- tau
 --     p : s [ m ] ≡ l
 
@@ -135,7 +135,7 @@ data _==>s_ : {Gam : Cx Ty} {tau rho : Ty} (s : Gam !-s tau -o rho) -> (s' : Gam
         -> ---------------------
            app s m ==>s app s' m
 
-  app-term : forall {Gam sg tau rho} {s : Gam !-s tau -o rho} {m m' : Gam !- sg} -> 
+  app-term : forall {Gam sg tau rho} {s : Gam !-s tau -o rho} {m m' : Gam !- sg} ->
            m ==> m'
         -> ---------------------
            app s m ==>s app s m'
@@ -167,7 +167,7 @@ infixr 2 _==>p_
 data _==>p_ : {Gam : Cx Ty} {sg tau rho : Ty} ->
                  Plugged Gam rho tau ->
                  Plugged Gam rho sg -> Set where
- 
+
   stack : forall {Gam tau rho} {s s' : Gam !-s tau -o rho} {m : Gam !- tau} ->
 
            s ==>s s'
@@ -226,7 +226,7 @@ shift {tau1 = tau1}{sg = sg} s m n .s (app m' .n) (term (app-fun r)) =
   sg ->> tau1 , app s n , m' , term r , refl
 shift {tau1 = tau1}{sg = sg} s m n .s (app .m n') (term (app-arg r)) =
   sg ->> tau1 , app s n' , m , stack (app-term r) , refl
- 
+
 -- the plugging operation preserves term reduction
 red-term : forall {Gam tau rho} -> (s : Gam !-s tau -o rho) -> (m m' : Gam !- tau) ->
              m ==> m' -> s [ m ] ==> s [ m' ]
@@ -445,7 +445,7 @@ wk-red-sub theta f tau (suc x) {pi = pi} {s = s} redT =
   coerce (\m -> SN (s [ m ])) (str-suc pi (theta x)) (f tau x {pi = str pi} {s = s} redT)
 
 -- reducible substitutions are closed under renaming
-rename-red-sub : 
+rename-red-sub :
   forall {Gam Del Phi}
     (theta : Sub Gam Del) ->
       (pi : Ren Del Phi) ->
@@ -466,7 +466,7 @@ extend-red-sub' theta f n red sg zero = red
 extend-red-sub' theta f n red tau (suc x) {Del = Del'}{pi = pi}{s = s} redT =
   coerce (\m -> SN (s [ subst pi m ])) (sym p) (f tau x {pi = pi}{s = s} redT) where
     p : subst (sub1 n) (subst suc (theta x)) ≡ theta x
-    p = begin 
+    p = begin
             subst (sub1 n) (subst suc (theta x))
           ≡⟨ comp_subst (sub1 n) suc (theta x) ⟩
             subst (comp (sub1 n) suc) (theta x)
@@ -476,7 +476,7 @@ extend-red-sub' theta f n red tau (suc x) {Del = Del'}{pi = pi}{s = s} redT =
             theta x
           ∎
 
--- reducible substitutions can be simulateously renamed and extended
+-- reducible substitutions can be simultaneously renamed and extended
 extend-red-sub :
   forall {Gam Del Phi sg} {theta : Sub Gam Del} {pi : Ren Del Phi} ->
     RedSub Gam Del theta ->
@@ -518,7 +518,7 @@ fundamental-theorem {Gam}{Del}{sg ->> tau}(lam m) theta f {pi = pi}{s = s} redT 
             ∎
 
     red-m : Red tau (subst (lift theta) m)
-    red-m = fundamental-theorem m (lift theta) (wk-red-sub theta f) 
+    red-m = fundamental-theorem m (lift theta) (wk-red-sub theta f)
 fundamental-theorem {Gam}{tau = tau} (app{sg} m n) theta f {Del = Del}{pi = pi} {s = s} redT =
   fundamental-theorem
     {tau = sg ->> tau} m theta f {pi = pi} {s = app s (rename pi (subst theta n))} (redT , red') where
@@ -539,7 +539,7 @@ fundamental-theorem {Gam}{tau = tau} (app{sg} m n) theta f {Del = Del}{pi = pi} 
         (red {pi = pi'} {s = s} redT)
 
 {-** every term is strongly normalising **-}
-sn-theorem : 
+sn-theorem :
   forall {Gam tau} -> (m : Gam !- tau) -> SN m
 sn-theorem {tau = tau} m =
   red-sn tau m (coerce (Red tau) (sub-var m) (fundamental-theorem m var (\sg -> var-red sg)))
